@@ -113,6 +113,8 @@ static void terminal_set_pull_force(int argc, const char **argv);
 #ifdef DEBUG_SMOOTH_MOTOR
 static void terminal_smooth(int argc, const char **argv);
 #endif
+static void terminal_set_adc2_pushpull(int argc, const char **argv);
+static void terminal_set_adc2(int argc, const char **argv);
 
 // Private variables
 static volatile bool stop_now = true;
@@ -805,8 +807,8 @@ static bool is_config_out_of_limits(const skypuff_config *conf)
 								  min_config.slow_erpm, max_config.slow_erpm) ||
 		   is_speed_out_of_limits("manual_slow_erpm", conf->manual_slow_erpm,
 								  min_config.manual_slow_erpm, max_config.manual_slow_erpm) ||
-		   is_speed_out_of_limits("unwinding_strong_erpm", conf->unwinding_strong_erpm,
-								  min_config.unwinding_strong_erpm, max_config.unwinding_strong_erpm) ||
+		  // is_speed_out_of_limits("unwinding_strong_erpm", conf->unwinding_strong_erpm,
+		//						  min_config.unwinding_strong_erpm, max_config.unwinding_strong_erpm) ||
 		   is_pull_out_of_limits("pull_current", conf->pull_current,
 								 min_config.pull_current, max_config.pull_current) ||
 		   is_pull_out_of_limits("brake_current", conf->brake_current,
@@ -817,8 +819,8 @@ static bool is_config_out_of_limits(const skypuff_config *conf)
 								 min_config.manual_brake_current, max_config.manual_brake_current) ||
 		   is_pull_out_of_limits("unwinding_current", conf->unwinding_current,
 								 min_config.unwinding_current, max_config.unwinding_current) ||
-		   is_pull_out_of_limits("unwinding_strong_current", conf->unwinding_strong_current,
-								 min_config.unwinding_strong_current, max_config.unwinding_strong_current) ||
+		   //is_pull_out_of_limits("unwinding_strong_current", conf->unwinding_strong_current,
+		//						 min_config.unwinding_strong_current, max_config.unwinding_strong_current) ||
 		   is_pull_out_of_limits("rewinding_current", conf->rewinding_current,
 								 conf->unwinding_current, max_config.rewinding_current) ||
 		   is_pull_out_of_limits("slow_max_current", conf->slow_max_current,
@@ -1613,6 +1615,14 @@ void app_custom_start(void)
 		"Debug smooth motor control.",
 		"<release/brake/current/speed> [current/erpm]", terminal_smooth);
 #endif
+	terminal_register_command_callback(
+		"adc2_pushpull",
+		"Set EXT_ADC2 GPIO pin to PUSHPULL mode",
+		"", terminal_set_adc2_pushpull);
+	terminal_register_command_callback(
+		"adc2",
+		"Set EXT_ADC2 GPIO pin value",
+		"[0, 1]", terminal_set_adc2);
 
 	// Run control loop thread
 	chThdCreateStatic(my_thread_wa, sizeof(my_thread_wa), NORMALPRIO, my_thread, NULL);
@@ -3234,3 +3244,33 @@ static void terminal_smooth(int argc, const char **argv)
 	}
 }
 #endif
+
+static void terminal_set_adc2_pushpull(int argc, const char **argv)
+{
+	(void)argc;
+	(void)argv;
+
+	palSetPadMode(HW_ADC_EXT2_GPIO, HW_ADC_EXT2_PIN,
+				  PAL_MODE_OUTPUT_PUSHPULL |
+				  PAL_STM32_OSPEED_HIGHEST);
+	commands_printf("ADC_EXT2 GPIO set to PUSHPULL mode");
+}
+
+static void terminal_set_adc2(int argc, const char **argv)
+{
+	if (argc < 2)
+	{
+		commands_printf("Command requires at least one argument 1 or 0 -- For example: 'set_adc2 1'");
+		return;
+	}
+
+	else if (!strcmp(argv[1], "1")) {
+		palSetPad(HW_ADC_EXT2_GPIO, HW_ADC_EXT2_PIN);
+		commands_printf("palSetPad(HW_ADC_EXT2_GPIO, HW_ADC_EXT2_PIN)");
+
+	}
+	else if (!strcmp(argv[1], "0")) {
+		palClearPad(HW_ADC_EXT2_GPIO, HW_ADC_EXT2_PIN);
+		commands_printf("palClearPad(HW_ADC_EXT2_GPIO, HW_ADC_EXT2_PIN)");
+	}
+}
