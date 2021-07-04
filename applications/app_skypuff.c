@@ -113,8 +113,6 @@ static void terminal_set_pull_force(int argc, const char **argv);
 #ifdef DEBUG_SMOOTH_MOTOR
 static void terminal_smooth(int argc, const char **argv);
 #endif
-static void terminal_set_adc2_pushpull(int argc, const char **argv);
-static void terminal_set_adc2(int argc, const char **argv);
 
 // Private variables
 static volatile bool stop_now = true;
@@ -1450,6 +1448,30 @@ inline static void send_stats(const int cur_tac, bool add_temps)
 	commands_send_app_data(buffer, ind);
 }
 
+void set_adc2_pushpull(void)
+{
+	palClearPad(HW_ADC_EXT2_GPIO, HW_ADC_EXT2_PIN);
+	palSetPadMode(HW_ADC_EXT2_GPIO, HW_ADC_EXT2_PIN,
+				  PAL_MODE_OUTPUT_PUSHPULL |
+				  PAL_STM32_OSPEED_HIGHEST);
+
+#ifdef VERBOSE_TERMINAL
+	commands_printf("Skypuff - ADC_EXT2 GPIO set to PUSHPULL mode for guillotine switch");
+#endif
+}
+
+void adc2_tick(void)
+{
+	const int delay = 1, loops = 6;
+
+	for(int i = 0; i < loops; i++) {
+		palSetPad(HW_ADC_EXT2_GPIO, HW_ADC_EXT2_PIN);
+		chThdSleepMilliseconds(delay);
+		palClearPad(HW_ADC_EXT2_GPIO, HW_ADC_EXT2_PIN);
+		chThdSleepMilliseconds(delay);
+	}
+}
+
 void custom_app_data_handler(unsigned char *data, unsigned int len)
 {
 	if (len < 1)
@@ -1487,6 +1509,10 @@ void custom_app_data_handler(unsigned char *data, unsigned int len)
 			return;
 
 		terminal_command = SET_CONF;
+		break;
+	case SK_COMM_GUILLOTINE:
+		// Cut the rope!
+		adc2_tick();
 		break;
 	default:
 		commands_printf("%s: -- Can't deserialize command -- Unknown command '%d'.",
@@ -1534,7 +1560,10 @@ static void antisex_init(void)
 // threads here and set up callbacks.
 void app_custom_start(void)
 {
-	// Enable WiFi controll
+	// Set guillotine switch to TTL output mode
+	set_adc2_pushpull();
+
+	// Enable WiFi / Radio controll
 	app_uartcomm_start();
 
 	// Reset tachometer on app start to prevent instant unwinding to zero
@@ -1615,14 +1644,6 @@ void app_custom_start(void)
 		"Debug smooth motor control.",
 		"<release/brake/current/speed> [current/erpm]", terminal_smooth);
 #endif
-	terminal_register_command_callback(
-		"adc2_pushpull",
-		"Set EXT_ADC2 GPIO pin to PUSHPULL mode",
-		"", terminal_set_adc2_pushpull);
-	terminal_register_command_callback(
-		"adc2",
-		"Set EXT_ADC2 GPIO pin value",
-		"[0, 1]", terminal_set_adc2);
 
 	// Run control loop thread
 	chThdCreateStatic(my_thread_wa, sizeof(my_thread_wa), NORMALPRIO, my_thread, NULL);
@@ -3244,33 +3265,3 @@ static void terminal_smooth(int argc, const char **argv)
 	}
 }
 #endif
-
-static void terminal_set_adc2_pushpull(int argc, const char **argv)
-{
-	(void)argc;
-	(void)argv;
-
-	palSetPadMode(HW_ADC_EXT2_GPIO, HW_ADC_EXT2_PIN,
-				  PAL_MODE_OUTPUT_PUSHPULL |
-				  PAL_STM32_OSPEED_HIGHEST);
-	commands_printf("ADC_EXT2 GPIO set to PUSHPULL mode");
-}
-
-static void terminal_set_adc2(int argc, const char **argv)
-{
-	if (argc < 2)
-	{
-		commands_printf("Command requires at least one argument 1 or 0 -- For example: 'set_adc2 1'");
-		return;
-	}
-
-	else if (!strcmp(argv[1], "1")) {
-		palSetPad(HW_ADC_EXT2_GPIO, HW_ADC_EXT2_PIN);
-		commands_printf("palSetPad(HW_ADC_EXT2_GPIO, HW_ADC_EXT2_PIN)");
-
-	}
-	else if (!strcmp(argv[1], "0")) {
-		palClearPad(HW_ADC_EXT2_GPIO, HW_ADC_EXT2_PIN);
-		commands_printf("palClearPad(HW_ADC_EXT2_GPIO, HW_ADC_EXT2_PIN)");
-	}
-}

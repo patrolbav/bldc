@@ -44,6 +44,7 @@ typedef enum
 	SK_COMM_ZERO_IS_SET,
 	SK_COMM_FORCE_IS_SET,
 	SK_COMM_SETTINGS_APPLIED,
+	SK_COMM_GUILLOTINE,
 } skypuff_custom_app_data_command;
 
 // Winch FSM
