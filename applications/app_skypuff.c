@@ -110,6 +110,7 @@ static void terminal_set_example_conf(int argc, const char **argv);
 static void terminal_alive(int argc, const char **argv);
 static void terminal_set_state(int argc, const char **argv);
 static void terminal_set_pull_force(int argc, const char **argv);
+static void terminal_adc2_tick(int argc, const char **argv);
 #ifdef DEBUG_SMOOTH_MOTOR
 static void terminal_smooth(int argc, const char **argv);
 #endif
@@ -1460,18 +1461,6 @@ void set_adc2_pushpull(void)
 #endif
 }
 
-void adc2_tick(void)
-{
-	const int delay = 1, loops = 6;
-
-	for(int i = 0; i < loops; i++) {
-		palSetPad(HW_ADC_EXT2_GPIO, HW_ADC_EXT2_PIN);
-		chThdSleepMilliseconds(delay);
-		palClearPad(HW_ADC_EXT2_GPIO, HW_ADC_EXT2_PIN);
-		chThdSleepMilliseconds(delay);
-	}
-}
-
 void custom_app_data_handler(unsigned char *data, unsigned int len)
 {
 	if (len < 1)
@@ -1512,7 +1501,7 @@ void custom_app_data_handler(unsigned char *data, unsigned int len)
 		break;
 	case SK_COMM_GUILLOTINE:
 		// Cut the rope!
-		adc2_tick();
+		terminal_adc2_tick(0, 0);
 		break;
 	default:
 		commands_printf("%s: -- Can't deserialize command -- Unknown command '%d'.",
@@ -1638,6 +1627,11 @@ void app_custom_start(void)
 		"force",
 		"Set SkyPUFF pull force",
 		"[kg]", terminal_set_pull_force);
+	terminal_register_command_callback(
+		"adc2_tick",
+		"Cut the rope with guillotine",
+		"", terminal_adc2_tick);
+
 #ifdef DEBUG_SMOOTH_MOTOR
 	terminal_register_command_callback(
 		"smooth",
@@ -3265,3 +3259,23 @@ static void terminal_smooth(int argc, const char **argv)
 	}
 }
 #endif
+
+void terminal_adc2_tick(int argc, const char **argv)
+{
+	(void)argc;
+	(void)argv;
+
+	const int delay = 1, loops = 6;
+
+#ifdef VERBOSE_TERMINAL
+	commands_printf("%s: -- ADC2 %d impulses with %d delay",
+	                state_str(state), loops, delay);
+#endif
+
+	for(int i = 0; i < loops; i++) {
+		palSetPad(HW_ADC_EXT2_GPIO, HW_ADC_EXT2_PIN);
+		chThdSleepMilliseconds(delay);
+		palClearPad(HW_ADC_EXT2_GPIO, HW_ADC_EXT2_PIN);
+		chThdSleepMilliseconds(delay);
+	}
+}
