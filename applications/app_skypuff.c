@@ -1553,7 +1553,7 @@ void app_custom_start(void)
 	set_adc2_pushpull();
 
 	// Enable WiFi / Radio controll
-	app_uartcomm_start();
+	app_uartcomm_start(UART_PORT_COMM_HEADER);
 
 	// Reset tachometer on app start to prevent instant unwinding to zero
 	mc_interface_get_tachometer_value(true);
