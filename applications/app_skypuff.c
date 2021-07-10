@@ -994,12 +994,9 @@ inline static void manual_brake(const int cur_tac)
 				loop_step >= alive_until ? ", -- Communication timeout, send 'alive <period>'" : "");
 }
 
-inline static void pull_state(const int cur_tac, const float pull_current, const skypuff_state new_state,
+inline static void current_state(const int cur_tac, const float current, const skypuff_state new_state,
 							  const char *additional_msg)
 {
-	// Detect direction to zero depending on tachometer value
-	float current = cur_tac < 0 ? pull_current : -pull_current;
-
 	// Updates of pulling force sets this state again, do not change state_start_time
 	if (state != new_state)
 	{
@@ -1025,6 +1022,15 @@ inline static void pull_state(const int cur_tac, const float pull_current, const
 
 	smooth_motor_current(cur_tac, prev_abs_tac, current);
 	timeout_reset();
+}
+
+inline static void pull_state(const int cur_tac, const float pull_current, const skypuff_state new_state,
+							  const char *additional_msg)
+{
+	// Detect direction to zero depending on tachometer value
+	float current = cur_tac < 0 ? pull_current : -pull_current;
+
+	current_state(cur_tac, current, new_state, additional_msg);
 }
 
 inline static void unwinding(const int cur_tac)
@@ -1062,9 +1068,12 @@ inline static void manual_slow_speed_up(const int cur_tac)
 	char msg[64];
 	snprintf(msg, 64, ", until: %.1fms (%.0f ERPM)",
 			 (double)erpm_to_ms(config.manual_slow_erpm), (double)config.manual_slow_erpm);
+
 	// Set high filtered value on entering speed up mode
-	erpm_filtered = cur_tac < 0 ? config.manual_slow_erpm : -config.manual_slow_erpm;
-	pull_state(cur_tac, config.manual_slow_speed_up_current, MANUAL_SLOW_SPEED_UP, msg);
+	// Positive current - positive ERPM, tachometer value goes up
+	erpm_filtered = config.manual_slow_erpm;
+	
+	current_state(cur_tac, config.manual_slow_speed_up_current, MANUAL_SLOW_SPEED_UP, msg);
 }
 
 inline static void manual_slow_back_speed_up(const int cur_tac)
@@ -1072,9 +1081,12 @@ inline static void manual_slow_back_speed_up(const int cur_tac)
 	char msg[64];
 	snprintf(msg, 64, ", until: %.1fms (%.0f ERPM)",
 			 (double)erpm_to_ms(config.manual_slow_erpm), (double)config.manual_slow_erpm);
+
 	// Set high filtered value on entering speed up mode
-	erpm_filtered = cur_tac < 0 ? -config.manual_slow_erpm : config.manual_slow_erpm;
-	pull_state(cur_tac, -config.manual_slow_speed_up_current, MANUAL_SLOW_BACK_SPEED_UP, msg);
+	// Negative current - negative ERPM, tachometer value goes down
+	erpm_filtered = -config.manual_slow_erpm;
+	
+	current_state(cur_tac, -config.manual_slow_speed_up_current, MANUAL_SLOW_BACK_SPEED_UP, msg);
 }
 
 inline static void slowing(const int cur_tac, const float erpm)
@@ -1100,12 +1112,9 @@ inline static void slowing(const int cur_tac, const float erpm)
 		smooth_motor_release();
 }
 
-inline static void slow_state(const int cur_tac, const float cur_erpm,
-							  const float constant_erpm, const skypuff_state new_state)
+inline static void speed_state(const int cur_tac, const float cur_erpm,
+							  const float to_zero_constant_erpm, const skypuff_state new_state)
 {
-	// Detect zero direction depending on tachometer value
-	float to_zero_constant_erpm = cur_tac < 0 ? constant_erpm : -constant_erpm;
-
 	state = new_state;
 	send_state(state);
 
@@ -1123,6 +1132,15 @@ inline static void slow_state(const int cur_tac, const float cur_erpm,
 	timeout_reset();
 }
 
+inline static void slow_state(const int cur_tac, const float cur_erpm,
+							  const float constant_erpm, const skypuff_state new_state)
+{
+	// Detect zero direction depending on tachometer value
+	float to_zero_constant_erpm = cur_tac < 0 ? constant_erpm : -constant_erpm;
+
+	speed_state(cur_tac, cur_erpm, to_zero_constant_erpm, new_state);
+}
+
 inline static void slow(const int cur_tac, const float cur_erpm)
 {
 	slow_state(cur_tac, cur_erpm, config.slow_erpm, SLOW);
@@ -1130,12 +1148,12 @@ inline static void slow(const int cur_tac, const float cur_erpm)
 
 inline static void manual_slow(const int cur_tac, const float cur_erpm)
 {
-	slow_state(cur_tac, cur_erpm, config.manual_slow_erpm, MANUAL_SLOW);
+	speed_state(cur_tac, cur_erpm, config.manual_slow_erpm, MANUAL_SLOW);
 }
 
 inline static void manual_slow_back(const int cur_tac, const float cur_erpm)
 {
-	slow_state(cur_tac, cur_erpm, -config.manual_slow_erpm, MANUAL_SLOW_BACK);
+	speed_state(cur_tac, cur_erpm, -config.manual_slow_erpm, MANUAL_SLOW_BACK);
 }
 
 // Example conf for my winch model: https://youtu.be/KoNegc4SzxY?t=6
@@ -2030,13 +2048,9 @@ inline static void process_states(const int cur_tac, const int abs_tac)
 		if (!(loop_step % timeout_reset_interval))
 			timeout_reset();
 
-		// Go braking or slowing?
-		if (brake_or_slowing(cur_tac, abs_tac))
-			break;
-
 		cur_erpm = mc_interface_get_rpm();
 
-		// Rotating direction changed or stopped?
+		// Stopped long enough?
 		if (is_filtered_speed_too_low(cur_erpm))
 		{
 			manual_brake(cur_tac);
@@ -2044,8 +2058,7 @@ inline static void process_states(const int cur_tac, const int abs_tac)
 		}
 
 		// Fast enough for PID speed in zero direction?
-		if ((cur_tac < 0 && cur_erpm >= config.manual_slow_erpm) ||
-			(cur_tac >= 0 && cur_erpm <= -config.manual_slow_erpm))
+		if (cur_erpm >= config.manual_slow_erpm)
 		{
 			manual_slow(cur_tac, cur_erpm);
 			break;
@@ -2062,7 +2075,7 @@ inline static void process_states(const int cur_tac, const int abs_tac)
 
 		cur_erpm = mc_interface_get_rpm();
 
-		// Rotating direction changed or stopped?
+		// Stopped long enough?
 		if (is_filtered_speed_too_low(cur_erpm))
 		{
 			manual_brake(cur_tac);
@@ -2070,8 +2083,7 @@ inline static void process_states(const int cur_tac, const int abs_tac)
 		}
 
 		// Fast enough for PID speed in opposite from zero direction?
-		if ((cur_tac >= 0 && cur_erpm >= config.manual_slow_erpm) ||
-			(cur_tac < 0 && cur_erpm <= -config.manual_slow_erpm))
+		if (cur_erpm <= -config.manual_slow_erpm)
 		{
 			manual_slow_back(cur_tac, cur_erpm);
 			break;
@@ -2090,17 +2102,6 @@ inline static void process_states(const int cur_tac, const int abs_tac)
 		abs_current = fabs(cur_current);
 		cur_erpm = mc_interface_get_rpm();
 
-		// If slowing zone and speed is more then SLOW, go SLOWING
-		if (abs_tac < config.braking_length + config.slowing_length &&
-			config.slow_erpm < config.manual_slow_erpm)
-		{
-#ifdef VERBOSE_TERMINAL
-			commands_printf("%s: -- Slowing zone, manual slow speed is too high, go SLOWING", state_str(state));
-#endif
-			slowing(cur_tac, cur_erpm);
-			break;
-		}
-
 		// If current is above the limits
 		if (abs_current > config.manual_slow_max_current)
 		{
@@ -2114,13 +2115,6 @@ inline static void process_states(const int cur_tac, const int abs_tac)
 				(double)(config.manual_slow_max_current / config.amps_per_kg), (double)config.manual_slow_max_current);
 #endif
 			brake_or_manual_brake(cur_tac, abs_tac);
-			break;
-		}
-
-		// Slowly rewinded more then opposite side of braking zone?
-		if (is_unwinded_to_opposite_braking_zone(cur_tac, cur_erpm))
-		{
-			braking(cur_tac);
 			break;
 		}
 
@@ -2389,13 +2383,6 @@ inline static void process_terminal_commands(int *cur_tac, int *abs_tac)
 		switch (state)
 		{
 		case MANUAL_BRAKING:
-			if (*abs_tac <= config.braking_length)
-			{
-				commands_printf("%s: -- Can't switch to MANUAL_SLOW -- Please unwind from braking zone %.1fm (%d steps)",
-								state_str(state), (double)tac_steps_to_meters(config.braking_length),
-								config.braking_length);
-				break;
-			}
 			manual_slow_speed_up(*cur_tac);
 			break;
 		default:
@@ -2408,13 +2395,6 @@ inline static void process_terminal_commands(int *cur_tac, int *abs_tac)
 		switch (state)
 		{
 		case MANUAL_BRAKING:
-			if (*abs_tac <= config.braking_length)
-			{
-				commands_printf("%s: -- Can't switch to MANUAL_SLOW_BACK -- Please unwind from braking zone %.1fm (%d steps)",
-								state_str(state), (double)tac_steps_to_meters(config.braking_length),
-								config.braking_length);
-				break;
-			}
 			manual_slow_back_speed_up(*cur_tac);
 			break;
 		default:
@@ -2594,13 +2574,6 @@ inline static void process_terminal_commands(int *cur_tac, int *abs_tac)
 		case MANUAL_BRAKING:
 			if (is_drive_config_out_of_limits(&set_drive) || is_config_out_of_limits(&set_config))
 				break;
-
-			// Use braking_length from received config
-			/*if (*abs_tac > set_config.braking_length + set_config.braking_extension_length)
-			{
-				commands_printf("%s: -- Can't set configuration -- Position is out of safe braking zone", state_str(state));
-				break;
-			}*/
 
 			// mc_configuration changed?
 			if (set_drive.motor_poles != mc_conf->si_motor_poles ||

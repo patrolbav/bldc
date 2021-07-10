@@ -62,10 +62,10 @@ typedef enum
 	PULL,					   // Nominal pull
 	FAST_PULL,				   // Fast pull
 	MANUAL_BRAKING,			   // Any position braking caused by operator or communication timeout
-	MANUAL_SLOW_SPEED_UP,	   // Speed up until manual constant speed in direction to zero
-	MANUAL_SLOW,			   // Constant speed mode in direction to zero from any position
-	MANUAL_SLOW_BACK_SPEED_UP, // Speed up back in direction from zero until manual constant speed
-	MANUAL_SLOW_BACK,		   // Constant speed mode in direction from zero
+	MANUAL_SLOW_SPEED_UP,	   // Speed up until manual constant speed with positive current
+	MANUAL_SLOW,			   // Constant speed mode with positive current
+	MANUAL_SLOW_BACK_SPEED_UP, // Speed up until manual constant speed in negative current
+	MANUAL_SLOW_BACK,		   // Constant speed mode with negative current
 #ifdef DEBUG_SMOOTH_MOTOR
 	MANUAL_DEBUG_SMOOTH, // Debug smooth motor movements with 'smooth' terminal commands
 #endif
